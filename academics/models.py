@@ -59,3 +59,24 @@ class Attendance(models.Model):
 
     def __str__(self):
         return f"{self.student.username} - {self.subject.name} - {self.date}"
+
+class Result(models.Model):
+    EXAM_TYPES = (
+        ('INTERNAL_1', 'Internal Assessment 1'),
+        ('INTERNAL_2', 'Internal Assessment 2'),
+        ('SEMESTER', 'End Semester'),
+        ('ASSIGNMENT', 'Assignment'),
+    )
+    student = models.ForeignKey('users.User', on_delete=models.CASCADE, limit_choices_to={'role': 'STUDENT'})
+    subject = models.ForeignKey(Subject, on_delete=models.CASCADE)
+    exam_type = models.CharField(max_length=20, choices=EXAM_TYPES, default='INTERNAL_1')
+    marks_obtained = models.DecimalField(max_digits=5, decimal_places=2)
+    total_marks = models.DecimalField(max_digits=5, decimal_places=2, default=100)
+    recorded_by = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, related_name='recorded_results')
+    date_recorded = models.DateField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('student', 'subject', 'exam_type')
+
+    def __str__(self):
+        return f"{self.student.username} - {self.subject.name} ({self.exam_type}): {self.marks_obtained}/{self.total_marks}"

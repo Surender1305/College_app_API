@@ -26,3 +26,17 @@ class TimetableSerializer(serializers.ModelSerializer):
     class Meta:
         model = Timetable
         fields = ('id', 'course', 'subject', 'faculty', 'day', 'semester', 'start_time', 'end_time', 'room_number', 'subject_details', 'faculty_details')
+
+from .models import Attendance, Result
+
+class AttendanceSerializer(serializers.ModelSerializer):
+    student_details = UserSerializer(source='student', read_only=True)
+    class Meta:
+        model = Attendance
+        fields = '__all__'
+
+class ResultSerializer(serializers.ModelSerializer):
+    student_details = UserSerializer(source='student', read_only=True)
+    class Meta:
+        model = Result
+        fields = '__all__'
