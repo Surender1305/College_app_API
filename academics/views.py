@@ -45,6 +45,21 @@ from users.serializers import UserSerializer
 from .models import Attendance, Result
 from django.utils import timezone
 
+class FacultySubjectsView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if request.user.role != 'FACULTY':
+            return Response({'error': 'Only faculty can access this'}, status=status.HTTP_403_FORBIDDEN)
+        
+        # Get unique subjects assigned to this faculty in the timetable
+        from .models import Timetable
+        subjects_ids = Timetable.objects.filter(faculty=request.user).values_list('subject', flat=True).distinct()
+        subjects = Subject.objects.filter(id__in=subjects_ids)
+        
+        data = SubjectSerializer(subjects, many=True).data
+        return Response(data)
+
 class FacultyStudentListView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -52,10 +67,17 @@ class FacultyStudentListView(views.APIView):
         if request.user.role != 'FACULTY':
             return Response({'error': 'Only faculty can access this'}, status=status.HTTP_403_FORBIDDEN)
         
-        department_id = request.query_params.get('department_id')
+        course_id = request.query_params.get('course_id')
+        semester = request.query_params.get('semester')
+        
         students = User.objects.filter(role='STUDENT')
-        if department_id:
-            students = students.filter(department_id=department_id)
+        if course_id:
+            students = students.filter(department__courses__id=course_id)
+        if semester:
+            # Map semester back to year for simple demo
+            # Assuming semester 1,2 -> year 1; 3,4 -> year 2; 5,6 -> year 3; 7,8 -> year 4
+            year = (int(semester) + 1) // 2
+            students = students.filter(year=year)
             
         data = UserSerializer(students, many=True).data
         return Response(data)
