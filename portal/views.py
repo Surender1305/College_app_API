@@ -35,6 +35,18 @@ class DashboardStatsView(views.APIView):
             bed_count = User.objects.filter(role='STUDENT', department__code='BED').count()
             ic_count = User.objects.filter(role='STUDENT', department__code='IC').count()
 
+            # Pending Approvals
+            from .models import PendingAction
+            pending_approvals = PendingAction.objects.filter(status='PENDING').order_by('-created_at')[:5]
+            pending_data = []
+            for action in pending_approvals:
+                pending_data.append({
+                    'id': action.id,
+                    'title': action.title,
+                    'sub': f"{action.user.first_name or action.user.username} • {action.get_action_type_display()}",
+                    'time': action.created_at.strftime('%H:%M %p') if action.created_at.date() == today else action.created_at.strftime('%b %d'),
+                })
+
             return Response({
                 'enrollment': {
                     'total': total_students,
@@ -56,7 +68,8 @@ class DashboardStatsView(views.APIView):
                 'fees': {
                     'collected_percent': 72,
                     'pending_count': int(total_students * 0.1),
-                }
+                },
+                'pending_approvals': pending_data
             })
 
         elif role == 'FACULTY':
