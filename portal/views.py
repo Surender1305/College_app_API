@@ -47,6 +47,28 @@ class DashboardStatsView(views.APIView):
                     'time': action.created_at.strftime('%H:%M %p') if action.created_at.date() == today else action.created_at.strftime('%b %d'),
                 })
 
+            # Fee Stats (Dynamic)
+            from academics.models import FeeStructure, StudentPayment
+            from django.db.models import Sum
+            
+            total_expected_fees = 0
+            # For each student, find their course's fee structure for their current year
+            students = User.objects.filter(role='STUDENT')
+            for student in students:
+                course = student.department.courses.first() if student.department else None
+                if course:
+                    fs = FeeStructure.objects.filter(course=course, year=student.year).first()
+                    if fs:
+                        total_expected_fees += fs.tuition_fee + fs.lab_fee + fs.other_fees
+            
+            total_collected_fees = StudentPayment.objects.aggregate(Sum('amount_paid'))['amount_paid__sum'] or 0
+            fee_percent = int((total_collected_fees / total_expected_fees * 100)) if total_expected_fees > 0 else 0
+            pending_fee_count = User.objects.filter(role='STUDENT').count() - StudentPayment.objects.values('student').distinct().count()
+
+            # Latest Announcements
+            announcements = Announcement.objects.filter(target_role__in=['ALL', 'FACULTY', 'STUDENT']).order_by('-created_at')[:5]
+            announcement_data = AnnouncementSerializer(announcements, many=True).data
+
             return Response({
                 'enrollment': {
                     'total': total_students,
@@ -66,10 +88,11 @@ class DashboardStatsView(views.APIView):
                     'trend': 'up' if attendance_percent > 85 else 'stable',
                 },
                 'fees': {
-                    'collected_percent': 72,
-                    'pending_count': int(total_students * 0.1),
+                    'collected_percent': fee_percent,
+                    'pending_count': pending_fee_count,
                 },
-                'pending_approvals': pending_data
+                'pending_approvals': pending_data,
+                'announcements': announcement_data
             })
 
         elif role == 'FACULTY':
@@ -127,6 +150,10 @@ class DashboardStatsView(views.APIView):
             
             schedule_data = TimetableSerializer(today_slots, many=True).data
 
+            # Latest Announcements for Student
+            announcements = Announcement.objects.filter(target_role__in=['ALL', 'STUDENT']).order_by('-created_at')[:3]
+            announcement_data = AnnouncementSerializer(announcements, many=True).data
+
             return Response({
                 'user_info': {
                     'name': f"{user.first_name} {user.last_name}" if user.first_name else user.username,
@@ -140,7 +167,8 @@ class DashboardStatsView(views.APIView):
                     'credits': total_credits,
                     'assignments_due': 2,
                 },
-                'today_schedule': schedule_data
+                'today_schedule': schedule_data,
+                'announcements': announcement_data
             })
 
 class AnnouncementViewSet(viewsets.ModelViewSet):
