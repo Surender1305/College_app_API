@@ -84,20 +84,50 @@ class DashboardStatsView(views.APIView):
                 'today_schedule': schedule_data
             })
         else: # STUDENT
-            from academics.models import Attendance, Subject
+            from academics.models import Attendance, Subject, Timetable
+            from academics.serializers import TimetableSerializer
             from django.db.models import Sum
             
+            # Attendance Stats
             total_att = Attendance.objects.filter(student=user).count()
             present_att = Attendance.objects.filter(student=user, is_present=True).count()
             att_percent = int((present_att / total_att) * 100) if total_att > 0 else 100
             
+            # Credits from subjects in their course
+            # Assuming students are enrolled in a Course. For now we use subjects linked to their department.
             total_credits = Subject.objects.filter(course__department=user.department).aggregate(Sum('credits'))['credits__sum'] or 0
             
+            # Today's Timetable
+            day_map = {0: 'MON', 1: 'TUE', 2: 'WED', 3: 'THU', 4: 'FRI', 5: 'SAT', 6: 'SUN'}
+            today_str = day_map.get(today.weekday(), 'MON')
+            
+            # Find timetable for the student's department and year/semester
+            # For simplicity, we match by department and year (mapped to semester 2*year-1 and 2*year)
+            # Assuming current semester is 2*year-1 (odd semester for now)
+            current_semester = 2 * user.year - 1 
+            
+            today_slots = Timetable.objects.filter(
+                course__department=user.department,
+                day=today_str,
+                semester=current_semester
+            ).order_by('start_time')
+            
+            schedule_data = TimetableSerializer(today_slots, many=True).data
+
             return Response({
-                'attendance': att_percent,
-                'gpa': 3.8,
-                'credits': total_credits,
-                'assignments_due': 2,
+                'user_info': {
+                    'name': f"{user.first_name} {user.last_name}" if user.first_name else user.username,
+                    'department': user.department.name if user.department else "General",
+                    'course': "BCA" if user.department and user.department.code == "BCA" else "Degree", # Placeholder
+                    'semester': f"Semester {current_semester}",
+                },
+                'stats': {
+                    'attendance': att_percent,
+                    'gpa': 3.8, # Placeholder
+                    'credits': total_credits,
+                    'assignments_due': 2,
+                },
+                'today_schedule': schedule_data
             })
 
 class AnnouncementViewSet(viewsets.ModelViewSet):

@@ -4,9 +4,15 @@ from .models import User, Profile
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False)
 
+    department_name = serializers.CharField(source='department.name', read_only=True)
+    semester = serializers.SerializerMethodField()
+
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'password', 'role', 'phone_number', 'department', 'year', 'first_name', 'last_name')
+        fields = ('id', 'username', 'email', 'password', 'role', 'phone_number', 'department', 'department_name', 'year', 'semester', 'first_name', 'last_name')
+
+    def get_semester(self, obj):
+        return 2 * obj.year - 1 # Simple mapping for demo
 
     def create(self, validated_data):
         password = validated_data.pop('password', 'pjpcollege123')

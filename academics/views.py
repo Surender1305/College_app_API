@@ -156,3 +156,19 @@ class UploadMarksView(views.APIView):
             'created': created_count,
             'updated': updated_count
         })
+
+class StudentAttendanceView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        attendance = Attendance.objects.filter(student=request.user).order_by('-date')
+        from .serializers import AttendanceSerializer
+        return Response(AttendanceSerializer(attendance, many=True).data)
+
+class StudentResultView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        results = Result.objects.filter(student=request.user).order_by('-date_recorded')
+        from .serializers import ResultSerializer
+        return Response(ResultSerializer(results, many=True).data)
