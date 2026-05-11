@@ -80,3 +80,31 @@ class Result(models.Model):
 
     def __str__(self):
         return f"{self.student.username} - {self.subject.name} ({self.exam_type}): {self.marks_obtained}/{self.total_marks}"
+
+class FeeStructure(models.Model):
+    course = models.ForeignKey(Course, on_delete=models.CASCADE)
+    year = models.IntegerField(default=1)
+    tuition_fee = models.DecimalField(max_digits=10, decimal_places=2)
+    lab_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    other_fees = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    
+    class Meta:
+        unique_together = ('course', 'year')
+
+    def __str__(self):
+        return f"{self.course.name} - Year {self.year}: {self.total_fee()}"
+
+    def total_fee(self):
+        return self.tuition_fee + self.lab_fee + self.other_fees
+
+class StudentPayment(models.Model):
+    student = models.ForeignKey('users.User', on_delete=models.CASCADE, limit_choices_to={'role': 'STUDENT'})
+    fee_structure = models.ForeignKey(FeeStructure, on_delete=models.SET_NULL, null=True)
+    amount_paid = models.DecimalField(max_digits=10, decimal_places=2)
+    date_paid = models.DateTimeField(auto_now_add=True)
+    transaction_id = models.CharField(max_length=100, unique=True)
+    payment_method = models.CharField(max_length=50, default='ONLINE')
+    status = models.CharField(max_length=20, default='SUCCESS')
+
+    def __str__(self):
+        return f"{self.student.username} paid {self.amount_paid} on {self.date_paid}"

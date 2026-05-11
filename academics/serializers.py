@@ -40,3 +40,13 @@ class ResultSerializer(serializers.ModelSerializer):
     class Meta:
         model = Result
         fields = '__all__'
+
+class FeeStructureSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = FeeStructure
+        fields = '__all__'
+
+class StudentPaymentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StudentPayment
+        fields = '__all__'

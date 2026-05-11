@@ -172,3 +172,22 @@ class StudentResultView(views.APIView):
         results = Result.objects.filter(student=request.user).order_by('-date_recorded')
         from .serializers import ResultSerializer
         return Response(ResultSerializer(results, many=True).data)
+
+class StudentFeeView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from .models import FeeStructure, StudentPayment
+        from .serializers import FeeStructureSerializer, StudentPaymentSerializer
+        
+        user = request.user
+        # Find fee structure for student's course and year
+        fee_structure = FeeStructure.objects.filter(course=user.department.courses.first(), year=user.year).first()
+        payments = StudentPayment.objects.filter(student=user).order_by('-date_paid')
+        
+        data = {
+            'fee_structure': FeeStructureSerializer(fee_structure).data if fee_structure else None,
+            'payments': StudentPaymentSerializer(payments, many=True).data,
+            'total_paid': sum(p.amount_paid for p in payments)
+        }
+        return Response(data)
