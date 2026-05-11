@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Department, Course, Subject, Timetable
+from .models import Department, Course, Subject, Timetable, Result, FeeStructure, StudentPayment
 from users.serializers import UserSerializer
 
 class DepartmentSerializer(serializers.ModelSerializer):

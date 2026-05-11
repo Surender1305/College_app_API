@@ -1,6 +1,9 @@
 from rest_framework import viewsets, permissions
-from .models import Department, Course, Subject, Timetable
-from .serializers import DepartmentSerializer, CourseSerializer, SubjectSerializer, TimetableSerializer
+from .models import Department, Course, Subject, Timetable, Attendance, Result, FeeStructure, StudentPayment
+from .serializers import (
+    DepartmentSerializer, CourseSerializer, SubjectSerializer, TimetableSerializer,
+    AttendanceSerializer, ResultSerializer, FeeStructureSerializer, StudentPaymentSerializer
+)
 
 class DepartmentViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Department.objects.all()
@@ -162,7 +165,6 @@ class StudentAttendanceView(views.APIView):
 
     def get(self, request):
         attendance = Attendance.objects.filter(student=request.user).order_by('-date')
-        from .serializers import AttendanceSerializer
         return Response(AttendanceSerializer(attendance, many=True).data)
 
 class StudentResultView(views.APIView):
@@ -170,16 +172,12 @@ class StudentResultView(views.APIView):
 
     def get(self, request):
         results = Result.objects.filter(student=request.user).order_by('-date_recorded')
-        from .serializers import ResultSerializer
         return Response(ResultSerializer(results, many=True).data)
 
 class StudentFeeView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        from .models import FeeStructure, StudentPayment
-        from .serializers import FeeStructureSerializer, StudentPaymentSerializer
-        
         user = request.user
         # Find fee structure for student's course and year
         fee_structure = FeeStructure.objects.filter(course=user.department.courses.first(), year=user.year).first()
