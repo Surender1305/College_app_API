@@ -14,6 +14,13 @@ class Command(BaseCommand):
         # 1. Create Departments
         cs_dept, _ = Department.objects.get_or_create(name='Computer Science', code='CS', head='Dr. Alan Turing')
         me_dept, _ = Department.objects.get_or_create(name='Mechanical Engineering', code='ME', head='Dr. Nikola Tesla')
+        
+        mca_dept, _ = Department.objects.get_or_create(name='MCA', code='MCA', head='Dr. Amit Sharma')
+        bca_dept, _ = Department.objects.get_or_create(name='BCA', code='BCA', head='Dr. Priya Nair')
+        ic_eng, _ = Department.objects.get_or_create(name='IC (English)', code='IC_ENG', head='Prof. John Keats')
+        ic_che, _ = Department.objects.get_or_create(name='IC (Chemistry)', code='IC_CHE', head='Prof. Marie Curie')
+        ic_phy, _ = Department.objects.get_or_create(name='IC (Physics)', code='IC_PHY', head='Prof. Albert Einstein')
+        ic_mat, _ = Department.objects.get_or_create(name='IC (Mathematics)', code='IC_MAT', head='Prof. Isaac Newton')
 
         # 2. Create Courses
         btech_cs, _ = Course.objects.get_or_create(name='B.Tech Computer Science', department=cs_dept, duration_years=4)

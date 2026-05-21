@@ -14,12 +14,18 @@ def seed():
     print("Seeding updated data...")
     
     # Create Departments
-    mca_dept, _ = Department.objects.get_or_create(code='MCA', defaults={'name': 'Computer Applications'})
-    bca_dept, _ = Department.objects.get_or_create(code='BCA', defaults={'name': 'Computer Applications (UG)'})
+    mca_dept, _ = Department.objects.get_or_create(code='MCA', defaults={'name': 'MCA'})
+    bca_dept, _ = Department.objects.get_or_create(code='BCA', defaults={'name': 'BCA'})
     bed_dept, _ = Department.objects.get_or_create(code='BED', defaults={'name': 'Education'})
     ic_dept, _ = Department.objects.get_or_create(code='IC', defaults={'name': 'Intermediate Commerce'})
     
-    depts = [mca_dept, bca_dept, bed_dept, ic_dept]
+    # New requested departments
+    ic_eng, _ = Department.objects.get_or_create(code='IC_ENG', defaults={'name': 'IC (English)'})
+    ic_che, _ = Department.objects.get_or_create(code='IC_CHE', defaults={'name': 'IC (Chemistry)'})
+    ic_phy, _ = Department.objects.get_or_create(code='IC_PHY', defaults={'name': 'IC (Physics)'})
+    ic_mat, _ = Department.objects.get_or_create(code='IC_MAT', defaults={'name': 'IC (Mathematics)'})
+    
+    depts = [mca_dept, bca_dept, bed_dept, ic_dept, ic_eng, ic_che, ic_phy, ic_mat]
 
     # Create Courses
     mca_course, _ = Course.objects.get_or_create(name='MCA', department=mca_dept, duration_years=2)
