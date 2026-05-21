@@ -15,7 +15,7 @@ class CourseViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = CourseSerializer
     permission_classes = [permissions.IsAuthenticated]
 
-class SubjectViewSet(viewsets.ReadOnlyModelViewSet):
+class SubjectViewSet(viewsets.ModelViewSet):
     queryset = Subject.objects.all()
     serializer_class = SubjectSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -37,6 +37,16 @@ class TimetableViewSet(viewsets.ModelViewSet):
         if faculty_id:
             queryset = queryset.filter(faculty_id=faculty_id)
         return queryset
+
+class FeeStructureViewSet(viewsets.ModelViewSet):
+    queryset = FeeStructure.objects.all()
+    serializer_class = FeeStructureSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+class StudentPaymentViewSet(viewsets.ModelViewSet):
+    queryset = StudentPayment.objects.all()
+    serializer_class = StudentPaymentSerializer
+    permission_classes = [permissions.IsAuthenticated]
 
 from rest_framework import views, status
 from rest_framework.response import Response
