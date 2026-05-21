@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'users',
     'academics',
     'portal',
+    'admissions',
 ]
 
 MIDDLEWARE = [
