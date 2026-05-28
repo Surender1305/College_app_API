@@ -43,6 +43,18 @@ class FeeStructureViewSet(viewsets.ModelViewSet):
     serializer_class = FeeStructureSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def create(self, request, *args, **kwargs):
+        course_id = request.data.get('course')
+        year = request.data.get('year')
+        if course_id and year:
+            instance = FeeStructure.objects.filter(course_id=course_id, year=year).first()
+            if instance:
+                serializer = self.get_serializer(instance, data=request.data, partial=True)
+                serializer.is_valid(raise_exception=True)
+                self.perform_update(serializer)
+                return Response(serializer.data, status=status.HTTP_200_OK)
+        return super().create(request, *args, **kwargs)
+
 class StudentPaymentViewSet(viewsets.ModelViewSet):
     queryset = StudentPayment.objects.all()
     serializer_class = StudentPaymentSerializer
