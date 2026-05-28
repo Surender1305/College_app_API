@@ -11,25 +11,24 @@ class Command(BaseCommand):
     def handle(self, *args, **kwargs):
         self.stdout.write('Seeding data...')
 
-        # 1. Create Departments
-        cs_dept, _ = Department.objects.get_or_create(name='Computer Science', code='CS', head='Dr. Alan Turing')
-        me_dept, _ = Department.objects.get_or_create(name='Mechanical Engineering', code='ME', head='Dr. Nikola Tesla')
-        
-        mca_dept, _ = Department.objects.get_or_create(name='MCA', code='MCA', head='Dr. Amit Sharma')
-        bca_dept, _ = Department.objects.get_or_create(name='BCA', code='BCA', head='Dr. Priya Nair')
-        ic_eng, _ = Department.objects.get_or_create(name='IC (English)', code='IC_ENG', head='Prof. John Keats')
-        ic_che, _ = Department.objects.get_or_create(name='IC (Chemistry)', code='IC_CHE', head='Prof. Marie Curie')
-        ic_phy, _ = Department.objects.get_or_create(name='IC (Physics)', code='IC_PHY', head='Prof. Albert Einstein')
-        ic_mat, _ = Department.objects.get_or_create(name='IC (Mathematics)', code='IC_MAT', head='Prof. Isaac Newton')
+        # 1. Create Departments (Using defaults for non-unique attributes to prevent IntegrityErrors)
+        cs_dept, _ = Department.objects.get_or_create(code='CS', defaults={'name': 'Computer Science', 'head': 'Dr. Alan Turing'})
+        me_dept, _ = Department.objects.get_or_create(code='ME', defaults={'name': 'Mechanical Engineering', 'head': 'Dr. Nikola Tesla'})
+        mca_dept, _ = Department.objects.get_or_create(code='MCA', defaults={'name': 'MCA', 'head': 'Dr. Amit Sharma'})
+        bca_dept, _ = Department.objects.get_or_create(code='BCA', defaults={'name': 'BCA', 'head': 'Dr. Priya Nair'})
+        ic_eng, _ = Department.objects.get_or_create(code='IC_ENG', defaults={'name': 'IC (English)', 'head': 'Prof. John Keats'})
+        ic_che, _ = Department.objects.get_or_create(code='IC_CHE', defaults={'name': 'IC (Chemistry)', 'head': 'Prof. Marie Curie'})
+        ic_phy, _ = Department.objects.get_or_create(code='IC_PHY', defaults={'name': 'IC (Physics)', 'head': 'Prof. Albert Einstein'})
+        ic_mat, _ = Department.objects.get_or_create(code='IC_MAT', defaults={'name': 'IC (Mathematics)', 'head': 'Prof. Isaac Newton'})
 
         # 2. Create Courses
-        btech_cs, _ = Course.objects.get_or_create(name='B.Tech Computer Science', department=cs_dept, duration_years=4)
-        btech_me, _ = Course.objects.get_or_create(name='B.Tech Mechanical Engineering', department=me_dept, duration_years=4)
+        btech_cs, _ = Course.objects.get_or_create(name='B.Tech Computer Science', defaults={'department': cs_dept, 'duration_years': 4})
+        btech_me, _ = Course.objects.get_or_create(name='B.Tech Mechanical Engineering', defaults={'department': me_dept, 'duration_years': 4})
 
-        # 3. Create Subjects
-        dsa, _ = Subject.objects.get_or_create(name='Data Structures & Algorithms', code='CS101', course=btech_cs, credits=4)
-        dbms, _ = Subject.objects.get_or_create(name='Database Management Systems', code='CS102', course=btech_cs, credits=4)
-        thermo, _ = Subject.objects.get_or_create(name='Thermodynamics', code='ME101', course=btech_me, credits=3)
+        # 3. Create Subjects (Using defaults for code unique constraints)
+        dsa, _ = Subject.objects.get_or_create(code='CS101', defaults={'name': 'Data Structures & Algorithms', 'course': btech_cs, 'credits': 4})
+        dbms, _ = Subject.objects.get_or_create(code='CS102', defaults={'name': 'Database Management Systems', 'course': btech_cs, 'credits': 4})
+        thermo, _ = Subject.objects.get_or_create(code='ME101', defaults={'name': 'Thermodynamics', 'course': btech_me, 'credits': 3})
 
         # 4. Create Users
         # Admin
@@ -48,15 +47,16 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS('Created Faculty: faculty1 / faculty123'))
             
             # Add timetable for faculty
-            Timetable.objects.get_or_create(
-                course=btech_cs,
-                subject=dsa,
-                faculty=faculty1,
-                day='MON',
-                start_time=datetime.time(9, 0),
-                end_time=datetime.time(10, 30),
-                room_number='Lab 1'
-            )
+            if not Timetable.objects.filter(course=btech_cs, subject=dsa, faculty=faculty1).exists():
+                Timetable.objects.create(
+                    course=btech_cs,
+                    subject=dsa,
+                    faculty=faculty1,
+                    day='MON',
+                    start_time=datetime.time(9, 0),
+                    end_time=datetime.time(10, 30),
+                    room_number='Lab 1'
+                )
 
         # Student
         if not User.objects.filter(username='student1').exists():
@@ -67,11 +67,12 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS('Created Student: student1 / student123'))
 
         # 5. Create Announcements
-        Announcement.objects.get_or_create(
-            title='Welcome to PJP College',
-            content='We are excited to have you all here for the new semester!',
-            author=User.objects.get(username='admin'),
-            target_role='ALL'
-        )
+        if not Announcement.objects.filter(title='Welcome to PJP College').exists():
+            Announcement.objects.create(
+                title='Welcome to PJP College',
+                content='We are excited to have you all here for the new semester!',
+                author=User.objects.get(username='admin'),
+                target_role='ALL'
+            )
 
         self.stdout.write(self.style.SUCCESS('Database seeded successfully!'))
