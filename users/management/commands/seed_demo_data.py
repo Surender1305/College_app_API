@@ -62,6 +62,21 @@ class Command(BaseCommand):
         bed_course, _ = Course.objects.get_or_create(
             name='B.Ed', defaults={'department': bed_dept, 'duration_years': 2}
         )
+        
+        # IC Courses
+        ic_eng_course, _ = Course.objects.get_or_create(
+            name='IC - English', defaults={'department': ic_eng, 'duration_years': 2}
+        )
+        ic_che_course, _ = Course.objects.get_or_create(
+            name='IC - Chemistry', defaults={'department': ic_che, 'duration_years': 2}
+        )
+        ic_mat_course, _ = Course.objects.get_or_create(
+            name='IC - Mathematics', defaults={'department': ic_mat, 'duration_years': 2}
+        )
+        ic_phy_course, _ = Course.objects.get_or_create(
+            name='IC - Physics', defaults={'department': ic_phy, 'duration_years': 2}
+        )
+
 
         # ── 3. Subjects ────────────────────────────────────────────────────────
         dsa,  _ = Subject.objects.get_or_create(code='CS101', defaults={'name': 'Data Structures & Algorithms', 'course': mca_course, 'credits': 4})
