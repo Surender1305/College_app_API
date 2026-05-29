@@ -20,10 +20,22 @@ class SubjectViewSet(viewsets.ModelViewSet):
     serializer_class = SubjectSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_permissions(self):
+        """Only admins may create/update/delete subjects."""
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
+        return [permissions.IsAuthenticated()]
+
 class TimetableViewSet(viewsets.ModelViewSet):
     queryset = Timetable.objects.all()
     serializer_class = TimetableSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    def get_permissions(self):
+        """Only admins may create/update/delete timetable slots."""
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
+        return [permissions.IsAuthenticated()]
 
     def get_queryset(self):
         queryset = Timetable.objects.all()
@@ -223,13 +235,21 @@ class StudentFeeView(views.APIView):
 
     def get(self, request):
         user = request.user
-        # Find fee structure for student's course and year
-        fee_structure = FeeStructure.objects.filter(course=user.department.courses.first(), year=user.year).first()
+        fee_structure = None
+
+        # Safely navigate optional department → courses chain
+        if user.department:
+            course = user.department.courses.first()
+            if course:
+                fee_structure = FeeStructure.objects.filter(
+                    course=course, year=user.year
+                ).first()
+
         payments = StudentPayment.objects.filter(student=user).order_by('-date_paid')
-        
+
         data = {
             'fee_structure': FeeStructureSerializer(fee_structure).data if fee_structure else None,
             'payments': StudentPaymentSerializer(payments, many=True).data,
-            'total_paid': sum(p.amount_paid for p in payments)
+            'total_paid': sum(p.amount_paid for p in payments),
         }
         return Response(data)
