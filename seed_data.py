@@ -13,19 +13,36 @@ from academics.models import Department, Course, Subject, Attendance
 def seed():
     print("Seeding updated data...")
     
-    # Create Departments
-    mca_dept, _ = Department.objects.get_or_create(code='MCA', defaults={'name': 'MCA'})
-    bca_dept, _ = Department.objects.get_or_create(code='BCA', defaults={'name': 'BCA'})
-    bed_dept, _ = Department.objects.get_or_create(code='BED', defaults={'name': 'Education'})
-    ic_dept, _ = Department.objects.get_or_create(code='IC', defaults={'name': 'Intermediate Commerce'})
-    
-    # New requested departments
-    ic_eng, _ = Department.objects.get_or_create(code='IC_ENG', defaults={'name': 'IC (English)'})
-    ic_che, _ = Department.objects.get_or_create(code='IC_CHE', defaults={'name': 'IC (Chemistry)'})
-    ic_phy, _ = Department.objects.get_or_create(code='IC_PHY', defaults={'name': 'IC (Physics)'})
-    ic_mat, _ = Department.objects.get_or_create(code='IC_MAT', defaults={'name': 'IC (Mathematics)'})
-    
-    depts = [mca_dept, bca_dept, bed_dept, ic_dept, ic_eng, ic_che, ic_phy, ic_mat]
+    # ── Departments ────────────────────────────────────────────────────────────
+    # Standalone departments
+    mca_dept, _ = Department.objects.update_or_create(
+        code='MCA', defaults={'name': 'MCA', 'group': None}
+    )
+    bca_dept, _ = Department.objects.update_or_create(
+        code='BCA', defaults={'name': 'BCA', 'group': None}
+    )
+    bed_dept, _ = Department.objects.update_or_create(
+        code='BED', defaults={'name': 'B.Ed', 'group': None}
+    )
+
+    # IC (Intermediate College) sub-departments — grouped under "IC"
+    ic_eng, _ = Department.objects.update_or_create(
+        code='IC_ENG', defaults={'name': 'IC - English',     'group': 'IC'}
+    )
+    ic_che, _ = Department.objects.update_or_create(
+        code='IC_CHE', defaults={'name': 'IC - Chemistry',   'group': 'IC'}
+    )
+    ic_mat, _ = Department.objects.update_or_create(
+        code='IC_MAT', defaults={'name': 'IC - Mathematics', 'group': 'IC'}
+    )
+    ic_phy, _ = Department.objects.update_or_create(
+        code='IC_PHY', defaults={'name': 'IC - Physics',     'group': 'IC'}
+    )
+
+    # Remove the old flat IC department if it exists (no longer needed)
+    Department.objects.filter(code='IC').update(name='IC - General', group='IC')
+
+    depts = [mca_dept, bca_dept, bed_dept, ic_eng, ic_che, ic_mat, ic_phy]
 
     # Create Courses
     mca_course, _ = Course.objects.get_or_create(name='MCA', department=mca_dept, duration_years=2)

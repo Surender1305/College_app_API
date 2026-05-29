@@ -4,6 +4,8 @@ class Department(models.Model):
     name = models.CharField(max_length=100)
     code = models.CharField(max_length=10, unique=True)
     head = models.CharField(max_length=100, blank=True)
+    group = models.CharField(max_length=50, blank=True, null=True,
+                             help_text='Optional parent grouping label, e.g. "IC" for all IC sub-departments')
 
     def __str__(self):
         return self.name
