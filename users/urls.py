@@ -4,7 +4,7 @@ from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
 )
-from .views import UserProfileView, UserViewSet, ProfileSettingsView
+from .views import UserProfileView, UserViewSet, ProfileSettingsView, ChangePasswordView
 
 router = DefaultRouter()
 router.register(r'manage', UserViewSet, basename='user-manage')
@@ -14,5 +14,7 @@ urlpatterns = [
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('profile/', UserProfileView.as_view(), name='user_profile'),
     path('settings/', ProfileSettingsView.as_view(), name='user_settings'),
+    path('change-password/', ChangePasswordView.as_view(), name='change_password'),
     path('', include(router.urls)),
 ]
+
