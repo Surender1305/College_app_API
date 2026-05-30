@@ -276,9 +276,8 @@ class FacultyStudentStatsView(views.APIView):
         subject_ids = Timetable.objects.filter(faculty=request.user).values_list('subject', flat=True).distinct()
         subjects = Subject.objects.filter(id__in=subject_ids)
 
-        # Get all students in the courses this faculty teaches
-        course_ids = Timetable.objects.filter(faculty=request.user).values_list('course', flat=True).distinct()
-        students = User.objects.filter(role='STUDENT', department__courses__id__in=course_ids).distinct()
+        # Get all students
+        students = User.objects.filter(role='STUDENT')
 
         result = []
         for student in students:
