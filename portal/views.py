@@ -9,7 +9,7 @@ class DashboardStatsView(views.APIView):
 
     def get(self, request):
         user = request.user
-        role = getattr(user, 'role', 'STUDENT') 
+        role = getattr(user, 'role', 'STUDENT').upper()
         today = timezone.now().date()
 
         if role == 'ADMIN':
