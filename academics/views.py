@@ -262,6 +262,47 @@ class MarkAttendanceView(views.APIView):
             'updated': updated_count
         })
 
+class FacultyStudentStatsView(views.APIView):
+    """Returns attendance stats per student for all subjects taught by this faculty."""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if request.user.role != 'FACULTY':
+            return Response({'error': 'Only faculty can access this'}, status=status.HTTP_403_FORBIDDEN)
+
+        from .models import Timetable
+
+        # Get all subjects this faculty teaches
+        subject_ids = Timetable.objects.filter(faculty=request.user).values_list('subject', flat=True).distinct()
+        subjects = Subject.objects.filter(id__in=subject_ids)
+
+        # Get all students in the courses this faculty teaches
+        course_ids = Timetable.objects.filter(faculty=request.user).values_list('course', flat=True).distinct()
+        students = User.objects.filter(role='STUDENT', department__courses__id__in=course_ids).distinct()
+
+        result = []
+        for student in students:
+            total = Attendance.objects.filter(student=student, subject__in=subjects).count()
+            present = Attendance.objects.filter(student=student, subject__in=subjects, is_present=True).count()
+            att_pct = round((present / total * 100), 1) if total > 0 else None
+
+            dept = student.department
+            result.append({
+                'id': student.id,
+                'username': student.username,
+                'first_name': student.first_name,
+                'last_name': student.last_name,
+                'department': {'name': dept.name, 'code': dept.code} if dept else None,
+                'year': student.year,
+                'attendance_total': total,
+                'attendance_present': present,
+                'attendance_pct': att_pct,
+                'is_at_risk': att_pct is not None and att_pct < 75,
+            })
+
+        return Response(result)
+
+
 class UploadMarksView(views.APIView):
     permission_classes = [permissions.IsAuthenticated]
 
