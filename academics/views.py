@@ -1,4 +1,5 @@
 from rest_framework import viewsets, permissions
+from rest_framework.decorators import action
 from .models import Department, Course, Subject, Timetable, Attendance, Result, FeeStructure, StudentPayment
 from .serializers import (
     DepartmentSerializer, CourseSerializer, SubjectSerializer, TimetableSerializer,
@@ -33,7 +34,7 @@ class TimetableViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         """Only admins may create/update/delete timetable slots."""
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+        if self.action in ['create', 'update', 'partial_update', 'destroy', 'auto_generate']:
             return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
         return [permissions.IsAuthenticated()]
 
@@ -49,6 +50,103 @@ class TimetableViewSet(viewsets.ModelViewSet):
         if faculty_id:
             queryset = queryset.filter(faculty_id=faculty_id)
         return queryset
+
+    @action(detail=False, methods=['post'], url_path='auto-generate')
+    def auto_generate(self, request):
+        from django.db import transaction
+        from users.models import User
+        from rest_framework.response import Response
+        from rest_framework import status
+        
+        course_id = request.data.get('course_id')
+        semester = request.data.get('semester')
+        
+        if not course_id or not semester:
+            return Response({'error': 'course_id and semester are required'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        try:
+            course = Course.objects.get(id=course_id)
+        except Course.DoesNotExist:
+            return Response({'error': 'Course not found'}, status=status.HTTP_404_NOT_FOUND)
+            
+        # Get all subjects for this course
+        subjects = list(Subject.objects.filter(course=course))
+        if not subjects:
+            return Response({'error': 'No subjects registered for this course. Please add subjects first.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        # Get all faculty members
+        faculty_members = list(User.objects.filter(role='FACULTY'))
+        if not faculty_members:
+            return Response({'error': 'No faculty members registered. Please add faculty first.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        days = ['MON', 'TUE', 'WED', 'THU', 'FRI']
+        slots_config = [
+            ('09:00:00', '10:00:00'),
+            ('10:00:00', '11:00:00'),
+            ('11:15:00', '12:15:00'),
+            ('13:00:00', '14:00:00'),
+            ('14:00:00', '15:00:00'),
+        ]
+        
+        generated_slots = []
+        subject_index = 0
+        
+        # We will use transaction.atomic to ensure database consistency
+        with transaction.atomic():
+            # Delete existing slots for this course and semester to avoid partial duplicates or conflicts with old schedules
+            Timetable.objects.filter(course=course, semester=semester).delete()
+            
+            for day in days:
+                for start_t, end_t in slots_config:
+                    # Find a free faculty member for this slot
+                    busy_faculty_ids = Timetable.objects.filter(
+                        day=day, 
+                        start_time=start_t
+                    ).values_list('faculty_id', flat=True)
+                    
+                    free_faculty = [f for f in faculty_members if f.id not in busy_faculty_ids]
+                    
+                    if not free_faculty:
+                        selected_faculty = faculty_members[subject_index % len(faculty_members)]
+                    else:
+                        selected_faculty = free_faculty[0]
+                        
+                    # Find a free room
+                    occupied_rooms = Timetable.objects.filter(
+                        day=day,
+                        start_time=start_t
+                    ).values_list('room_number', flat=True)
+                    
+                    room_number = None
+                    for r_num in [f"Room {i}" for i in range(101, 115)]:
+                        if r_num not in occupied_rooms:
+                            room_number = r_num
+                            break
+                    if not room_number:
+                        room_number = f"Room {101 + (subject_index % 5)}"
+                        
+                    # Select subject in round-robin
+                    selected_subject = subjects[subject_index % len(subjects)]
+                    
+                    # Create the slot
+                    slot = Timetable.objects.create(
+                        course=course,
+                        subject=selected_subject,
+                        faculty=selected_faculty,
+                        day=day,
+                        semester=semester,
+                        start_time=start_t,
+                        end_time=end_t,
+                        room_number=room_number
+                    )
+                    generated_slots.append(slot)
+                    subject_index += 1
+                    
+        return Response({
+            'success': True,
+            'message': f'Successfully generated {len(generated_slots)} slots for {course.name} Sem {semester}!',
+            'data': TimetableSerializer(generated_slots, many=True).data
+        }, status=status.HTTP_201_CREATED)
 
 class FeeStructureViewSet(viewsets.ModelViewSet):
     queryset = FeeStructure.objects.all()
