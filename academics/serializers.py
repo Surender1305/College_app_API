@@ -14,10 +14,16 @@ class CourseSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class SubjectSerializer(serializers.ModelSerializer):
-    course = CourseSerializer(read_only=True)
     class Meta:
         model = Subject
         fields = '__all__'
+
+    def to_representation(self, instance):
+        rep = super().to_representation(instance)
+        if instance.course:
+            rep['course'] = CourseSerializer(instance.course).data
+            rep['course_details'] = CourseSerializer(instance.course).data
+        return rep
 
 class TimetableSerializer(serializers.ModelSerializer):
     subject_details = SubjectSerializer(source='subject', read_only=True)
