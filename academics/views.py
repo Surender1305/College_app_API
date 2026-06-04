@@ -16,16 +16,54 @@ class CourseViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = CourseSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+class IsAdminOrHOD(permissions.BasePermission):
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.user.role == 'ADMIN' or request.user.is_superuser:
+            return True
+        if request.user.role == 'FACULTY' and getattr(request.user, 'is_hod', False):
+            return True
+        return False
+
+    def has_object_permission(self, request, view, obj):
+        if request.user.role == 'ADMIN' or request.user.is_superuser:
+            return True
+        if request.user.role == 'FACULTY' and getattr(request.user, 'is_hod', False):
+            if hasattr(obj, 'course') and obj.course and obj.course.department == request.user.department:
+                return True
+            if hasattr(obj, 'department') and obj.department == request.user.department:
+                return True
+        return False
+
 class SubjectViewSet(viewsets.ModelViewSet):
     queryset = Subject.objects.all()
     serializer_class = SubjectSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_permissions(self):
-        """Only admins may create/update/delete subjects."""
+        """Only admins and HODs may create/update/delete subjects."""
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
+            return [permissions.IsAuthenticated(), IsAdminOrHOD()]
         return [permissions.IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        if user.role == 'FACULTY' and getattr(user, 'is_hod', False):
+            course = serializer.validated_data.get('course')
+            if course and course.department != user.department:
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError("HODs can only create subjects for courses in their department.")
+        serializer.save()
+
+    def perform_update(self, serializer):
+        user = self.request.user
+        if user.role == 'FACULTY' and getattr(user, 'is_hod', False):
+            course = serializer.validated_data.get('course')
+            if course and course.department != user.department:
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError("HODs can only update subjects for courses in their department.")
+        serializer.save()
 
 class TimetableViewSet(viewsets.ModelViewSet):
     queryset = Timetable.objects.all()
@@ -33,10 +71,28 @@ class TimetableViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_permissions(self):
-        """Only admins may create/update/delete timetable slots."""
+        """Only admins and HODs may create/update/delete timetable slots."""
         if self.action in ['create', 'update', 'partial_update', 'destroy', 'auto_generate']:
-            return [permissions.IsAuthenticated(), permissions.IsAdminUser()]
+            return [permissions.IsAuthenticated(), IsAdminOrHOD()]
         return [permissions.IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        if user.role == 'FACULTY' and getattr(user, 'is_hod', False):
+            course = serializer.validated_data.get('course')
+            if course and course.department != user.department:
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError("HODs can only create timetable slots for courses in their department.")
+        serializer.save()
+
+    def perform_update(self, serializer):
+        user = self.request.user
+        if user.role == 'FACULTY' and getattr(user, 'is_hod', False):
+            course = serializer.validated_data.get('course')
+            if course and course.department != user.department:
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError("HODs can only update timetable slots for courses in their department.")
+        serializer.save()
 
     def get_queryset(self):
         queryset = Timetable.objects.all()
@@ -69,10 +125,16 @@ class TimetableViewSet(viewsets.ModelViewSet):
         except Course.DoesNotExist:
             return Response({'error': 'Course not found'}, status=status.HTTP_404_NOT_FOUND)
             
-        # Get all subjects for this course
-        subjects = list(Subject.objects.filter(course=course))
+        # HOD restriction check on auto_generate
+        user = request.user
+        if user.role == 'FACULTY' and getattr(user, 'is_hod', False):
+            if course.department != user.department:
+                return Response({'error': 'HODs can only auto-generate timetables for courses in their department.'}, status=status.HTTP_403_FORBIDDEN)
+            
+        # Get all subjects for this course and semester
+        subjects = list(Subject.objects.filter(course=course, semester=semester))
         if not subjects:
-            return Response({'error': 'No subjects registered for this course. Please add subjects first.'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': f'No subjects registered for {course.name} Sem {semester}. Please add subjects first.'}, status=status.HTTP_400_BAD_REQUEST)
             
         # Get all faculty members
         faculty_members = list(User.objects.filter(role='FACULTY'))
@@ -81,67 +143,182 @@ class TimetableViewSet(viewsets.ModelViewSet):
             
         days = ['MON', 'TUE', 'WED', 'THU', 'FRI']
         slots_config = [
-            ('09:00:00', '10:00:00'),
-            ('10:00:00', '11:00:00'),
-            ('11:15:00', '12:15:00'),
-            ('13:00:00', '14:00:00'),
-            ('14:00:00', '15:00:00'),
+            ('09:00:00', '09:50:00'),  # Class 1
+            ('09:50:00', '10:40:00'),  # Class 2
+            # 10:40:00 - 11:00:00 is Break
+            ('11:00:00', '11:50:00'),  # Class 3
+            ('11:50:00', '12:40:00'),  # Class 4
+            # 12:40:00 - 13:30:00 is Lunch Break
+            ('13:30:00', '14:20:00'),  # Class 5
+            ('14:20:00', '15:10:00'),  # Class 6
+            # 15:10:00 - 15:20:00 is Short Break
+            ('15:20:00', '16:10:00'),  # Class 7
         ]
         
-        generated_slots = []
-        subject_index = 0
+        # Parse subjects into categories
+        labs = []
+        pets = []
+        theories = []
+        for s in subjects:
+            name_lower = s.name.lower()
+            code_lower = s.code.lower()
+            if 'pet' in name_lower or 'physical education' in name_lower or 'sports' in name_lower or 'games' in name_lower or 'p.e.t' in name_lower:
+                pets.append(s)
+            elif 'lab' in name_lower or 'practical' in name_lower or 'workshop' in name_lower or 'project' in name_lower:
+                labs.append(s)
+            else:
+                theories.append(s)
+
+        # We will keep a map of weekly count per subject
+        subject_weekly_counts = {s.id: 0 for s in subjects}
         
-        # We will use transaction.atomic to ensure database consistency
+        # Grid to hold the generated schedule locally before saving
+        grid = {day: [None] * 7 for day in days}
+        
+        # Helper to check if faculty is busy at a slot in database or in our current grid
+        def is_faculty_busy(faculty, day, slot_idx, start_t):
+            # Check DB (excluding slots of the current course/semester being overwritten)
+            if Timetable.objects.filter(day=day, start_time=start_t, faculty=faculty).exclude(course=course, semester=semester).exists():
+                return True
+            # Check current grid
+            slot_val = grid[day][slot_idx]
+            if slot_val and slot_val['faculty'].id == faculty.id:
+                return True
+            return False
+
+        # Helper to find a free room
+        def find_free_room(day, slot_idx, start_t, subject_index):
+            occupied_rooms = list(Timetable.objects.filter(day=day, start_time=start_t).exclude(course=course, semester=semester).values_list('room_number', flat=True))
+            # Also check current grid
+            slot_val = grid[day][slot_idx]
+            if slot_val:
+                occupied_rooms.append(slot_val['room_number'])
+            
+            for r_num in [f"Room {i}" for i in range(101, 125)]:
+                if r_num not in occupied_rooms:
+                    return r_num
+            return f"Room {101 + (subject_index % 5)}"
+
+        # Helper to select faculty for a subject
+        def get_faculty_for_subject(subject):
+            if subject.faculty:
+                return subject.faculty
+            # Fallback to any faculty
+            return faculty_members[subject.id % len(faculty_members)]
+
+        # 1. Schedule Labs (consecutive 2 slots: 0-1, 2-3, 4-5)
+        for lab_sub in labs:
+            scheduled = False
+            lab_faculty = get_faculty_for_subject(lab_sub)
+            for day in days:
+                if scheduled:
+                    break
+                for start_slot_idx in [0, 2, 4]:
+                    # Check if both slots are empty in grid
+                    if grid[day][start_slot_idx] is None and grid[day][start_slot_idx + 1] is None:
+                        t1_start, t1_end = slots_config[start_slot_idx]
+                        t2_start, t2_end = slots_config[start_slot_idx + 1]
+                        
+                        # Check faculty conflicts
+                        if not is_faculty_busy(lab_faculty, day, start_slot_idx, t1_start) and \
+                           not is_faculty_busy(lab_faculty, day, start_slot_idx + 1, t2_start):
+                            
+                            r1 = find_free_room(day, start_slot_idx, t1_start, lab_sub.id)
+                            r2 = find_free_room(day, start_slot_idx + 1, t2_start, lab_sub.id + 1)
+                            
+                            grid[day][start_slot_idx] = {
+                                'subject': lab_sub,
+                                'faculty': lab_faculty,
+                                'room_number': r1,
+                                'start_time': t1_start,
+                                'end_time': t1_end
+                            }
+                            grid[day][start_slot_idx + 1] = {
+                                'subject': lab_sub,
+                                'faculty': lab_faculty,
+                                'room_number': r2,
+                                'start_time': t2_start,
+                                'end_time': t2_end
+                            }
+                            subject_weekly_counts[lab_sub.id] += 2
+                            scheduled = True
+                            break
+
+        # 2. Schedule PET (exactly 1 slot per week)
+        for pet_sub in pets:
+            scheduled = False
+            pet_faculty = get_faculty_for_subject(pet_sub)
+            for day in days:
+                if scheduled:
+                    break
+                # Try slot 6 (last period) first, then others
+                for slot_idx in [6, 5, 4, 3, 2, 1, 0]:
+                    if grid[day][slot_idx] is None:
+                        t_start, t_end = slots_config[slot_idx]
+                        if not is_faculty_busy(pet_faculty, day, slot_idx, t_start):
+                            r = find_free_room(day, slot_idx, t_start, pet_sub.id)
+                            grid[day][slot_idx] = {
+                                'subject': pet_sub,
+                                'faculty': pet_faculty,
+                                'room_number': r,
+                                'start_time': t_start,
+                                'end_time': t_end
+                            }
+                            subject_weekly_counts[pet_sub.id] += 1
+                            scheduled = True
+                            break
+
+        # 3. Schedule Theories in remaining slots
+        if theories:
+            for day in days:
+                for slot_idx in range(7):
+                    if grid[day][slot_idx] is None:
+                        t_start, t_end = slots_config[slot_idx]
+                        
+                        # Sort theories by weekly count to keep them balanced
+                        theories.sort(key=lambda t: subject_weekly_counts[t.id])
+                        
+                        scheduled = False
+                        for theory_sub in theories:
+                            if subject_weekly_counts[theory_sub.id] >= 5:
+                                continue
+                            
+                            sub_faculty = get_faculty_for_subject(theory_sub)
+                            if not is_faculty_busy(sub_faculty, day, slot_idx, t_start):
+                                r = find_free_room(day, slot_idx, t_start, theory_sub.id)
+                                grid[day][slot_idx] = {
+                                    'subject': theory_sub,
+                                    'faculty': sub_faculty,
+                                    'room_number': r,
+                                    'start_time': t_start,
+                                    'end_time': t_end
+                                }
+                                subject_weekly_counts[theory_sub.id] += 1
+                                scheduled = True
+                                break
+                                
+        # Save scheduled slots
+        generated_slots = []
         with transaction.atomic():
             # Delete existing slots for this course and semester to avoid partial duplicates or conflicts with old schedules
             Timetable.objects.filter(course=course, semester=semester).delete()
             
             for day in days:
-                for start_t, end_t in slots_config:
-                    # Find a free faculty member for this slot
-                    busy_faculty_ids = Timetable.objects.filter(
-                        day=day, 
-                        start_time=start_t
-                    ).values_list('faculty_id', flat=True)
-                    
-                    free_faculty = [f for f in faculty_members if f.id not in busy_faculty_ids]
-                    
-                    if not free_faculty:
-                        selected_faculty = faculty_members[subject_index % len(faculty_members)]
-                    else:
-                        selected_faculty = free_faculty[0]
+                for slot_idx in range(7):
+                    slot_val = grid[day][slot_idx]
+                    if slot_val:
+                        slot = Timetable.objects.create(
+                            course=course,
+                            subject=slot_val['subject'],
+                            faculty=slot_val['faculty'],
+                            day=day,
+                            semester=semester,
+                            start_time=slot_val['start_time'],
+                            end_time=slot_val['end_time'],
+                            room_number=slot_val['room_number']
+                        )
+                        generated_slots.append(slot)
                         
-                    # Find a free room
-                    occupied_rooms = Timetable.objects.filter(
-                        day=day,
-                        start_time=start_t
-                    ).values_list('room_number', flat=True)
-                    
-                    room_number = None
-                    for r_num in [f"Room {i}" for i in range(101, 115)]:
-                        if r_num not in occupied_rooms:
-                            room_number = r_num
-                            break
-                    if not room_number:
-                        room_number = f"Room {101 + (subject_index % 5)}"
-                        
-                    # Select subject in round-robin
-                    selected_subject = subjects[subject_index % len(subjects)]
-                    
-                    # Create the slot
-                    slot = Timetable.objects.create(
-                        course=course,
-                        subject=selected_subject,
-                        faculty=selected_faculty,
-                        day=day,
-                        semester=semester,
-                        start_time=start_t,
-                        end_time=end_t,
-                        room_number=room_number
-                    )
-                    generated_slots.append(slot)
-                    subject_index += 1
-                    
         return Response({
             'success': True,
             'message': f'Successfully generated {len(generated_slots)} slots for {course.name} Sem {semester}!',
@@ -184,12 +361,35 @@ class FacultySubjectsView(views.APIView):
         if request.user.role != 'FACULTY':
             return Response({'error': 'Only faculty can access this'}, status=status.HTTP_403_FORBIDDEN)
         
-        # Get unique subjects assigned to this faculty in the timetable
+        # Union: subjects from timetable + subjects directly assigned via Subject.faculty FK
         from .models import Timetable
-        subjects_ids = Timetable.objects.filter(faculty=request.user).values_list('subject', flat=True).distinct()
-        subjects = Subject.objects.filter(id__in=subjects_ids)
+        timetable_subject_ids = set(Timetable.objects.filter(faculty=request.user).values_list('subject', flat=True).distinct())
+        direct_subject_ids = set(Subject.objects.filter(faculty=request.user).values_list('id', flat=True))
+        all_ids = timetable_subject_ids | direct_subject_ids
+        subjects = Subject.objects.filter(id__in=all_ids).select_related('course', 'course__department')
         
-        data = SubjectSerializer(subjects, many=True).data
+        # Return with course as raw ID alongside nested details
+        data = []
+        for sub in subjects:
+            item = {
+                'id': sub.id,
+                'name': sub.name,
+                'code': sub.code,
+                'credits': sub.credits,
+                'semester': sub.semester,
+                'course': sub.course_id,  # Raw integer ID for client-side filtering
+                'course_details': {
+                    'id': sub.course.id,
+                    'name': sub.course.name,
+                    'department': {
+                        'id': sub.course.department.id,
+                        'name': sub.course.department.name,
+                        'code': sub.course.department.code,
+                    } if sub.course.department else None,
+                    'duration_years': sub.course.duration_years,
+                } if sub.course else None,
+            }
+            data.append(item)
         return Response(data)
 
 class FacultyStudentListView(views.APIView):

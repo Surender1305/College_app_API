@@ -108,7 +108,7 @@ class DashboardStatsView(views.APIView):
 
 
         elif role == 'FACULTY':
-            from academics.models import Timetable
+            from academics.models import Timetable, Subject, Attendance
             from academics.serializers import TimetableSerializer
             
             day_map = {0: 'MON', 1: 'TUE', 2: 'WED', 3: 'THU', 4: 'FRI', 5: 'SAT', 6: 'SUN'}
@@ -117,24 +117,35 @@ class DashboardStatsView(views.APIView):
             today_slots = Timetable.objects.filter(faculty=user, day=today_str).order_by('start_time')
             schedule_data = TimetableSerializer(today_slots, many=True).data
             
+            # Compute real stats
+            total_timetable_slots = Timetable.objects.filter(faculty=user).count()
+            direct_subjects = Subject.objects.filter(faculty=user).count()
+            total_subjects = max(direct_subjects, Timetable.objects.filter(faculty=user).values('subject').distinct().count())
+            
+            # Attendance records this faculty recorded
+            pending_attendance = Attendance.objects.filter(recorded_by=user, date=today).count()
+            total_students_taught = Timetable.objects.filter(faculty=user).values('course').distinct().count()
+            
             return Response({
                 'user_info': {
                     'name': f"{user.first_name} {user.last_name}" if user.first_name else user.username,
                     'department': user.department.name if user.department else "General Faculty",
-                    'role': 'Senior Lecturer', # Default for now
+                    'role': 'HOD' if getattr(user, 'is_hod', False) else 'Faculty',
                 },
                 'stats': {
                     'classes_today': today_slots.count(),
-                    'syllabus_progress': 65, # Placeholder or calculate from some model
-                    'pending_assignments': 8,
-                    'student_feedback': 4.7,
+                    'total_subjects': total_subjects,
+                    'total_slots': total_timetable_slots,
+                    'pending_assignments': 0,
+                    'student_feedback': 0.0,
+                    'syllabus_progress': 0,
                 },
                 'today_schedule': schedule_data
             })
         else: # STUDENT
-            from academics.models import Attendance, Subject, Timetable
+            from academics.models import Attendance, Subject, Timetable, Result
             from academics.serializers import TimetableSerializer
-            from django.db.models import Sum
+            from django.db.models import Sum, Avg
             
             # Attendance Stats
             total_att = Attendance.objects.filter(student=user).count()
@@ -142,16 +153,28 @@ class DashboardStatsView(views.APIView):
             att_percent = int((present_att / total_att) * 100) if total_att > 0 else 100
             
             # Credits from subjects in their course
-            # Assuming students are enrolled in a Course. For now we use subjects linked to their department.
             total_credits = Subject.objects.filter(course__department=user.department).aggregate(Sum('credits'))['credits__sum'] or 0
+            
+            # Dynamic course name from student's department
+            course_name = "Degree"
+            if user.department:
+                course_obj = user.department.courses.first() if user.department.courses.exists() else None
+                if course_obj:
+                    course_name = course_obj.name
+                else:
+                    course_name = user.department.name
+            
+            # Compute GPA from actual results (percentage-based, scaled to 10)
+            results_avg = Result.objects.filter(student=user).aggregate(
+                avg_pct=Avg('marks_obtained')
+            )['avg_pct']
+            gpa = round(float(results_avg) / 10.0, 1) if results_avg else 0.0
             
             # Today's Timetable
             day_map = {0: 'MON', 1: 'TUE', 2: 'WED', 3: 'THU', 4: 'FRI', 5: 'SAT', 6: 'SUN'}
             today_str = day_map.get(today.weekday(), 'MON')
             
             # Find timetable for the student's department and year/semester
-            # For simplicity, we match by department and year (mapped to semester 2*year-1 and 2*year)
-            # Assuming current semester is 2*year-1 (odd semester for now)
             current_semester = 2 * user.year - 1 
             
             today_slots = Timetable.objects.filter(
@@ -170,14 +193,14 @@ class DashboardStatsView(views.APIView):
                 'user_info': {
                     'name': f"{user.first_name} {user.last_name}" if user.first_name else user.username,
                     'department': user.department.name if user.department else "General",
-                    'course': "BCA" if user.department and user.department.code == "BCA" else "Degree", # Placeholder
+                    'course': course_name,
                     'semester': f"Semester {current_semester}",
                 },
                 'stats': {
                     'attendance': att_percent,
-                    'gpa': 3.8, # Placeholder
+                    'gpa': gpa,
                     'credits': total_credits,
-                    'assignments_due': 2,
+                    'assignments_due': 0,
                 },
                 'today_schedule': schedule_data,
                 'announcements': announcement_data

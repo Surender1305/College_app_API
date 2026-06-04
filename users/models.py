@@ -8,6 +8,7 @@ class User(AbstractUser):
         ('STUDENT', 'Student'),
     )
     role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='STUDENT')
+    is_hod = models.BooleanField(default=False)
     phone_number = models.CharField(max_length=15, blank=True, null=True)
     department = models.ForeignKey('academics.Department', on_delete=models.SET_NULL, null=True, blank=True)
     year = models.IntegerField(default=1)

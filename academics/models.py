@@ -23,6 +23,8 @@ class Subject(models.Model):
     code = models.CharField(max_length=20, unique=True)
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='subjects')
     credits = models.IntegerField(default=3)
+    semester = models.IntegerField(default=1)
+    faculty = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, blank=True, limit_choices_to={'role': 'FACULTY'}, related_name='subjects')
 
     def __str__(self):
         return f"{self.name} ({self.code})"

@@ -23,6 +23,8 @@ class SubjectSerializer(serializers.ModelSerializer):
         if instance.course:
             rep['course'] = CourseSerializer(instance.course).data
             rep['course_details'] = CourseSerializer(instance.course).data
+        if instance.faculty:
+            rep['faculty_details'] = UserSerializer(instance.faculty).data
         return rep
 
 class TimetableSerializer(serializers.ModelSerializer):

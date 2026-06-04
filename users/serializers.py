@@ -9,7 +9,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'password', 'role', 'phone_number', 'department', 'department_name', 'year', 'semester', 'first_name', 'last_name')
+        fields = ('id', 'username', 'email', 'password', 'role', 'is_hod', 'phone_number', 'department', 'department_name', 'year', 'semester', 'first_name', 'last_name')
 
     def get_semester(self, obj):
         return 2 * obj.year - 1 # Simple mapping for demo
@@ -21,12 +21,20 @@ class UserSerializer(serializers.ModelSerializer):
         return user
 
     def validate_username(self, value):
-        if User.objects.filter(username=value).exists():
+        # Exclude self during updates to avoid false uniqueness violations
+        qs = User.objects.filter(username=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
             raise serializers.ValidationError("A user with this username already exists.")
         return value
 
     def validate_email(self, value):
-        if value and User.objects.filter(email=value).exists():
+        # Exclude self during updates to avoid false uniqueness violations
+        qs = User.objects.filter(email=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if value and qs.exists():
             raise serializers.ValidationError("A user with this email already exists.")
         return value
 

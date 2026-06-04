@@ -105,9 +105,22 @@ class Command(BaseCommand):
         })
         faculty1.set_password('faculty123')
         faculty1.role = 'FACULTY'
+        faculty1.is_hod = True
         faculty1.department = mca_dept
         faculty1.save()
-        self.stdout.write(self.style.SUCCESS('Faculty: faculty1 / faculty123'))
+        self.stdout.write(self.style.SUCCESS('Faculty HOD: faculty1 / faculty123'))
+
+        faculty2, _ = User.objects.get_or_create(username='faculty2', defaults={
+            'email': 'faculty2@pjp.com',
+            'role': 'FACULTY',
+            'department': mca_dept,
+        })
+        faculty2.set_password('faculty223')
+        faculty2.role = 'FACULTY'
+        faculty2.is_hod = False
+        faculty2.department = mca_dept
+        faculty2.save()
+        self.stdout.write(self.style.SUCCESS('Faculty member: faculty2 / faculty223'))
 
         # Timetable for faculty1
         if not Timetable.objects.filter(course=mca_course, subject=dsa, faculty=faculty1).exists():
