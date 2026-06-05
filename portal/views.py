@@ -117,6 +117,15 @@ class DashboardStatsView(views.APIView):
             today_slots = Timetable.objects.filter(faculty=user, day=today_str).order_by('start_time')
             schedule_data = TimetableSerializer(today_slots, many=True).data
             
+            # Check attendance completion for each slot
+            for slot_data in schedule_data:
+                subject_id = slot_data.get('subject')
+                if subject_id:
+                    is_completed = Attendance.objects.filter(subject_id=subject_id, date=today).exists()
+                    slot_data['attendance_completed'] = is_completed
+                else:
+                    slot_data['attendance_completed'] = False
+            
             # Compute real stats
             total_timetable_slots = Timetable.objects.filter(faculty=user).count()
             direct_subjects = Subject.objects.filter(faculty=user).count()
@@ -192,6 +201,7 @@ class DashboardStatsView(views.APIView):
             return Response({
                 'user_info': {
                     'name': f"{user.first_name} {user.last_name}" if user.first_name else user.username,
+                    'roll_number': user.username,
                     'department': user.department.name if user.department else "General",
                     'course': course_name,
                     'semester': f"Semester {current_semester}",

@@ -6,6 +6,24 @@ from .serializers import (
     AttendanceSerializer, ResultSerializer, FeeStructureSerializer, StudentPaymentSerializer
 )
 
+class AttendanceViewSet(viewsets.ReadOnlyModelViewSet):
+    """Read-only viewset for attendance records, filterable by subject and date."""
+    serializer_class = AttendanceSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        qs = Attendance.objects.all()
+        subject = self.request.query_params.get('subject')
+        date = self.request.query_params.get('date')
+        student = self.request.query_params.get('student')
+        if subject:
+            qs = qs.filter(subject_id=subject)
+        if date:
+            qs = qs.filter(date=date)
+        if student:
+            qs = qs.filter(student_id=student)
+        return qs
+
 class DepartmentViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Department.objects.all()
     serializer_class = DepartmentSerializer
@@ -208,12 +226,14 @@ class TimetableViewSet(viewsets.ModelViewSet):
 
         # 1. Schedule Labs (consecutive 2 slots: 0-1, 2-3, 4-5)
         for lab_sub in labs:
-            scheduled = False
             lab_faculty = get_faculty_for_subject(lab_sub)
+            target_periods = getattr(lab_sub, 'periods_per_week', 2)
             for day in days:
-                if scheduled:
+                if subject_weekly_counts[lab_sub.id] >= target_periods:
                     break
                 for start_slot_idx in [0, 2, 4]:
+                    if subject_weekly_counts[lab_sub.id] >= target_periods:
+                        break
                     # Check if both slots are empty in grid
                     if grid[day][start_slot_idx] is None and grid[day][start_slot_idx + 1] is None:
                         t1_start, t1_end = slots_config[start_slot_idx]
@@ -241,18 +261,19 @@ class TimetableViewSet(viewsets.ModelViewSet):
                                 'end_time': t2_end
                             }
                             subject_weekly_counts[lab_sub.id] += 2
-                            scheduled = True
                             break
 
-        # 2. Schedule PET (exactly 1 slot per week)
+        # 2. Schedule PET (up to periods_per_week per week)
         for pet_sub in pets:
-            scheduled = False
             pet_faculty = get_faculty_for_subject(pet_sub)
+            target_periods = getattr(pet_sub, 'periods_per_week', 2)
             for day in days:
-                if scheduled:
+                if subject_weekly_counts[pet_sub.id] >= target_periods:
                     break
                 # Try slot 6 (last period) first, then others
                 for slot_idx in [6, 5, 4, 3, 2, 1, 0]:
+                    if subject_weekly_counts[pet_sub.id] >= target_periods:
+                        break
                     if grid[day][slot_idx] is None:
                         t_start, t_end = slots_config[slot_idx]
                         if not is_faculty_busy(pet_faculty, day, slot_idx, t_start):
@@ -265,7 +286,6 @@ class TimetableViewSet(viewsets.ModelViewSet):
                                 'end_time': t_end
                             }
                             subject_weekly_counts[pet_sub.id] += 1
-                            scheduled = True
                             break
 
         # 3. Schedule Theories in remaining slots
@@ -278,9 +298,9 @@ class TimetableViewSet(viewsets.ModelViewSet):
                         # Sort theories by weekly count to keep them balanced
                         theories.sort(key=lambda t: subject_weekly_counts[t.id])
                         
-                        scheduled = False
                         for theory_sub in theories:
-                            if subject_weekly_counts[theory_sub.id] >= 5:
+                            target_periods = getattr(theory_sub, 'periods_per_week', 3)
+                            if subject_weekly_counts[theory_sub.id] >= target_periods:
                                 continue
                             
                             sub_faculty = get_faculty_for_subject(theory_sub)
@@ -294,7 +314,6 @@ class TimetableViewSet(viewsets.ModelViewSet):
                                     'end_time': t_end
                                 }
                                 subject_weekly_counts[theory_sub.id] += 1
-                                scheduled = True
                                 break
                                 
         # Save scheduled slots

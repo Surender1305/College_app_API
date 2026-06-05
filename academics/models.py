@@ -24,6 +24,7 @@ class Subject(models.Model):
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='subjects')
     credits = models.IntegerField(default=3)
     semester = models.IntegerField(default=1)
+    periods_per_week = models.IntegerField(default=3)
     faculty = models.ForeignKey('users.User', on_delete=models.SET_NULL, null=True, blank=True, limit_choices_to={'role': 'FACULTY'}, related_name='subjects')
 
     def __str__(self):
@@ -103,7 +104,7 @@ class FeeStructure(models.Model):
 
 class StudentPayment(models.Model):
     student = models.ForeignKey('users.User', on_delete=models.CASCADE, limit_choices_to={'role': 'STUDENT'})
-    fee_structure = models.ForeignKey(FeeStructure, on_delete=models.SET_NULL, null=True)
+    fee_structure = models.ForeignKey(FeeStructure, on_delete=models.SET_NULL, null=True, blank=True)
     amount_paid = models.DecimalField(max_digits=10, decimal_places=2)
     date_paid = models.DateTimeField(auto_now_add=True)
     transaction_id = models.CharField(max_length=100, unique=True)
