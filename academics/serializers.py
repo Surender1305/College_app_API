@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Department, Course, Subject, Timetable, Result, FeeStructure, StudentPayment
+from .models import Department, Course, Subject, Timetable, Result, FeeStructure, StudentPayment, StudentDocument
 from users.serializers import UserSerializer
 
 class DepartmentSerializer(serializers.ModelSerializer):
@@ -58,3 +58,9 @@ class StudentPaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = StudentPayment
         fields = '__all__'
+
+class StudentDocumentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StudentDocument
+        fields = ('id', 'student', 'document_type', 'name', 'uploaded_at')
+

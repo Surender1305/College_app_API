@@ -89,12 +89,13 @@ class Result(models.Model):
 class FeeStructure(models.Model):
     course = models.ForeignKey(Course, on_delete=models.CASCADE)
     year = models.IntegerField(default=1)
+    batch = models.CharField(max_length=15, blank=True, default='')
     tuition_fee = models.DecimalField(max_digits=10, decimal_places=2)
     lab_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     other_fees = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     
     class Meta:
-        unique_together = ('course', 'year')
+        unique_together = ('course', 'year', 'batch')
 
     def __str__(self):
         return f"{self.course.name} - Year {self.year}: {self.total_fee()}"
@@ -113,3 +114,21 @@ class StudentPayment(models.Model):
 
     def __str__(self):
         return f"{self.student.username} paid {self.amount_paid} on {self.date_paid}"
+
+class StudentDocument(models.Model):
+    DOCUMENT_TYPES = (
+        ('10TH_MARKSHEET', '10th Marksheet'),
+        ('12TH_MARKSHEET', '12th Marksheet'),
+        ('DEGREE_CERTIFICATE', 'Degree Certificate'),
+        ('TRANSFER_CERTIFICATE', 'Transfer Certificate'),
+        ('OTHER', 'Other Certificate/Marksheet'),
+    )
+    student = models.ForeignKey('users.User', on_delete=models.CASCADE, limit_choices_to={'role': 'STUDENT'}, related_name='documents')
+    document_type = models.CharField(max_length=30, choices=DOCUMENT_TYPES, default='OTHER')
+    name = models.CharField(max_length=255)
+    file = models.FileField(upload_to='vault/')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.student.username} - {self.get_document_type_display()} - {self.name}"
+

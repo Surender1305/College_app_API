@@ -224,44 +224,50 @@ class TimetableViewSet(viewsets.ModelViewSet):
             # Fallback to any faculty
             return faculty_members[subject.id % len(faculty_members)]
 
-        # 1. Schedule Labs (consecutive 2 slots: 0-1, 2-3, 4-5)
+        def get_consecutive_slot_blocks(k):
+            blocks = []
+            for start in range(4 - k + 1):
+                blocks.append(list(range(start, start + k)))
+            for start in range(4, 7 - k + 1):
+                blocks.append(list(range(start, start + k)))
+            return blocks
+
+        # 1. Schedule Labs (consecutive K slots on a single day where K is the target_periods)
         for lab_sub in labs:
             lab_faculty = get_faculty_for_subject(lab_sub)
             target_periods = getattr(lab_sub, 'periods_per_week', 2)
-            for day in days:
-                if subject_weekly_counts[lab_sub.id] >= target_periods:
-                    break
-                for start_slot_idx in [0, 2, 4]:
+            scheduled = False
+            for k in sorted([target_periods, 2, 1], reverse=True):
+                if scheduled or k > target_periods:
+                    continue
+                blocks = get_consecutive_slot_blocks(k)
+                for day in days:
                     if subject_weekly_counts[lab_sub.id] >= target_periods:
+                        scheduled = True
                         break
-                    # Check if both slots are empty in grid
-                    if grid[day][start_slot_idx] is None and grid[day][start_slot_idx + 1] is None:
-                        t1_start, t1_end = slots_config[start_slot_idx]
-                        t2_start, t2_end = slots_config[start_slot_idx + 1]
-                        
-                        # Check faculty conflicts
-                        if not is_faculty_busy(lab_faculty, day, start_slot_idx, t1_start) and \
-                           not is_faculty_busy(lab_faculty, day, start_slot_idx + 1, t2_start):
-                            
-                            r1 = find_free_room(day, start_slot_idx, t1_start, lab_sub.id)
-                            r2 = find_free_room(day, start_slot_idx + 1, t2_start, lab_sub.id + 1)
-                            
-                            grid[day][start_slot_idx] = {
-                                'subject': lab_sub,
-                                'faculty': lab_faculty,
-                                'room_number': r1,
-                                'start_time': t1_start,
-                                'end_time': t1_end
-                            }
-                            grid[day][start_slot_idx + 1] = {
-                                'subject': lab_sub,
-                                'faculty': lab_faculty,
-                                'room_number': r2,
-                                'start_time': t2_start,
-                                'end_time': t2_end
-                            }
-                            subject_weekly_counts[lab_sub.id] += 2
-                            break
+                    for block in blocks:
+                        if all(grid[day][idx] is None for idx in block):
+                            conflict = False
+                            for idx in block:
+                                t_start, _ = slots_config[idx]
+                                if is_faculty_busy(lab_faculty, day, idx, t_start):
+                                    conflict = True
+                                    break
+                            if not conflict:
+                                for idx in block:
+                                    t_start, t_end = slots_config[idx]
+                                    r = find_free_room(day, idx, t_start, lab_sub.id + idx)
+                                    grid[day][idx] = {
+                                        'subject': lab_sub,
+                                        'faculty': lab_faculty,
+                                        'room_number': r,
+                                        'start_time': t_start,
+                                        'end_time': t_end
+                                    }
+                                subject_weekly_counts[lab_sub.id] += len(block)
+                                if subject_weekly_counts[lab_sub.id] >= target_periods:
+                                    scheduled = True
+                                    break
 
         # 2. Schedule PET (up to periods_per_week per week)
         for pet_sub in pets:
@@ -352,8 +358,9 @@ class FeeStructureViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         course_id = request.data.get('course')
         year = request.data.get('year')
+        batch = request.data.get('batch', '').strip()
         if course_id and year:
-            instance = FeeStructure.objects.filter(course_id=course_id, year=year).first()
+            instance = FeeStructure.objects.filter(course_id=course_id, year=year, batch=batch).first()
             if instance:
                 serializer = self.get_serializer(instance, data=request.data, partial=True)
                 serializer.is_valid(raise_exception=True)
@@ -598,9 +605,16 @@ class StudentFeeView(views.APIView):
         if user.department:
             course = user.department.courses.first()
             if course:
-                fee_structure = FeeStructure.objects.filter(
-                    course=course, year=user.year
-                ).first()
+                # First try matching exact batch if student has a batch
+                if getattr(user, 'batch', ''):
+                    fee_structure = FeeStructure.objects.filter(
+                        course=course, year=user.year, batch=user.batch
+                    ).first()
+                # Fallback to no-batch (empty string) structure if not found or student batch is empty
+                if not fee_structure:
+                    fee_structure = FeeStructure.objects.filter(
+                        course=course, year=user.year, batch=''
+                    ).first()
 
         payments = StudentPayment.objects.filter(student=user).order_by('-date_paid')
 
@@ -610,3 +624,209 @@ class StudentFeeView(views.APIView):
             'total_paid': sum(p.amount_paid for p in payments),
         }
         return Response(data)
+
+class DownloadReceiptView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, pk):
+        from django.http import FileResponse
+        from io import BytesIO
+        from reportlab.lib.pagesizes import letter
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib import colors
+        from reportlab.lib.units import inch
+
+        try:
+            payment = StudentPayment.objects.get(pk=pk)
+        except StudentPayment.DoesNotExist:
+            return Response({'error': 'Payment record not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Security check: student can only download their own receipt. Admin/Faculty can download any.
+        if request.user.role == 'STUDENT' and payment.student != request.user:
+            return Response({'error': 'Unauthorized access to this receipt'}, status=status.HTTP_403_FORBIDDEN)
+
+        buffer = BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=letter,
+            rightMargin=54,
+            leftMargin=54,
+            topMargin=54,
+            bottomMargin=54
+        )
+
+        styles = getSampleStyleSheet()
+        
+        title_style = ParagraphStyle(
+            'TitleStyle',
+            parent=styles['Heading1'],
+            fontSize=20,
+            leading=24,
+            textColor=colors.HexColor('#0F1E36'),
+            alignment=1,
+            spaceAfter=10
+        )
+        
+        header_style = ParagraphStyle(
+            'HeaderStyle',
+            parent=styles['Normal'],
+            fontSize=9,
+            leading=11,
+            textColor=colors.HexColor('#4B5563'),
+            alignment=1
+        )
+
+        normal_style = styles['Normal']
+        bold_style = ParagraphStyle('BoldStyle', parent=normal_style, fontName='Helvetica-Bold')
+
+        story = []
+
+        # College Header details
+        story.append(Paragraph("<b>POPE JOHN PAUL II COLLEGE OF EDUCATION</b>", title_style))
+        story.append(Paragraph("Affiliated to Pondicherry University | Accredited by NAAC", header_style))
+        story.append(Paragraph("Reddiarpalayam, Puducherry - 605010", header_style))
+        story.append(Spacer(1, 15))
+
+        story.append(Paragraph("<b>OFFICIAL PAYMENT RECEIPT</b>", ParagraphStyle('ReceiptTitle', parent=styles['Heading2'], fontSize=13, leading=15, textColor=colors.HexColor('#1E3A8A'), alignment=1, spaceAfter=20)))
+
+        student = payment.student
+        dept_name = student.department.name if student.department else 'N/A'
+        batch_name = getattr(student, 'batch', 'N/A')
+        date_str = payment.date_paid.strftime("%d-%b-%Y %I:%M %p")
+
+        details_data = [
+            [Paragraph("<b>Student Name:</b>", normal_style), Paragraph(f"{student.first_name} {student.last_name}".strip(), normal_style),
+             Paragraph("<b>Receipt No:</b>", normal_style), Paragraph(f"REC-{payment.id:06d}", normal_style)],
+            [Paragraph("<b>Roll Number:</b>", normal_style), Paragraph(student.username, normal_style),
+             Paragraph("<b>Transaction ID:</b>", normal_style), Paragraph(payment.transaction_id, normal_style)],
+            [Paragraph("<b>Course/Dept:</b>", normal_style), Paragraph(dept_name, normal_style),
+             Paragraph("<b>Payment Date:</b>", normal_style), Paragraph(date_str, normal_style)],
+            [Paragraph("<b>Year & Batch:</b>", normal_style), Paragraph(f"Year {student.year} ({batch_name})", normal_style),
+             Paragraph("<b>Status:</b>", normal_style), Paragraph(f"<font color='green'><b>{payment.status}</b></font>", normal_style)]
+        ]
+
+        t_details = Table(details_data, colWidths=[1.2*inch, 2.3*inch, 1.2*inch, 2.3*inch])
+        t_details.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+            ('TOPPADDING', (0,0), (-1,-1), 4),
+            ('LINEBELOW', (0,-1), (-1,-1), 1, colors.HexColor('#E5E7EB')),
+        ]))
+        story.append(t_details)
+        story.append(Spacer(1, 20))
+
+        # Payment Particulars Table
+        part_data = [
+            [Paragraph("<b>Particulars</b>", bold_style), Paragraph("<b>Payment Method</b>", bold_style), Paragraph("<b>Amount (INR)</b>", bold_style)],
+            [Paragraph("College Academic Fee installment", normal_style), Paragraph(payment.payment_method, normal_style), Paragraph(f"Rs. {payment.amount_paid:.2f}", normal_style)],
+            [Paragraph("<b>Total Paid</b>", bold_style), Paragraph("", normal_style), Paragraph(f"<b>Rs. {payment.amount_paid:.2f}</b>", bold_style)]
+        ]
+        
+        t_part = Table(part_data, colWidths=[3.8*inch, 1.7*inch, 1.5*inch])
+        t_part.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#F3F4F6')),
+            ('ALIGN', (2,0), (2,-1), 'RIGHT'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('PADDING', (0,0), (-1,-1), 8),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#E5E7EB')),
+            ('BACKGROUND', (0,-1), (-1,-1), colors.HexColor('#F9FAFB')),
+        ]))
+        story.append(t_part)
+        story.append(Spacer(1, 40))
+
+        sig_data = [
+            ["", Paragraph("For <b>POPE JOHN PAUL II COLLEGE</b>", ParagraphStyle('ForPJP', parent=normal_style, alignment=2))],
+            ["", Spacer(1, 30)],
+            ["", Paragraph("________________________<br/><b>Authorized Signatory</b>", ParagraphStyle('Sign', parent=normal_style, alignment=2))]
+        ]
+        t_sig = Table(sig_data, colWidths=[4.0*inch, 3.0*inch])
+        t_sig.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ]))
+        story.append(t_sig)
+
+        doc.build(story)
+
+        buffer.seek(0)
+        return FileResponse(buffer, as_attachment=True, filename=f"receipt_{payment.transaction_id}.pdf")
+
+import base64
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from django.conf import settings
+from django.core.files.base import ContentFile
+from django.http import HttpResponse
+from rest_framework import viewsets, permissions, status
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from .models import StudentDocument
+from .serializers import StudentDocumentSerializer
+
+def get_encryption_key():
+    salt = b"PJP_Vault_Salt_Key"
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=salt,
+        iterations=100000,
+    )
+    return base64.urlsafe_b64encode(kdf.derive(settings.SECRET_KEY.encode()))
+
+class DocumentVaultViewSet(viewsets.ModelViewSet):
+    serializer_class = StudentDocumentSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        if self.request.user.role == 'STUDENT':
+            return StudentDocument.objects.filter(student=self.request.user).order_by('-uploaded_at')
+        return StudentDocument.objects.all().order_by('-uploaded_at')
+
+    def perform_create(self, serializer):
+        student = self.request.user
+        if self.request.user.role != 'STUDENT':
+            student_id = self.request.data.get('student')
+            if student_id:
+                from users.models import User
+                student = User.objects.get(id=student_id)
+        
+        uploaded_file = self.request.FILES.get('file')
+        if not uploaded_file:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError("File field is required.")
+
+        file_bytes = uploaded_file.read()
+        
+        key = get_encryption_key()
+        fernet = Fernet(key)
+        encrypted_bytes = fernet.encrypt(file_bytes)
+
+        encrypted_file = ContentFile(encrypted_bytes, name=uploaded_file.name)
+        serializer.save(student=student, file=encrypted_file, name=uploaded_file.name)
+
+    @action(detail=True, methods=['get'])
+    def download(self, request, pk=None):
+        doc = self.get_object()
+        
+        # Security check: Student can only download their own documents. Faculty/Admin can download any.
+        if request.user.role == 'STUDENT' and doc.student != request.user:
+            return Response({'error': 'Unauthorized access to this document'}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            doc.file.seek(0)
+            encrypted_bytes = doc.file.read()
+        except Exception as e:
+            return Response({'error': f'Failed to read file: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        try:
+            key = get_encryption_key()
+            fernet = Fernet(key)
+            decrypted_bytes = fernet.decrypt(encrypted_bytes)
+        except Exception as e:
+            return Response({'error': f'Failed to decrypt file: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        response = HttpResponse(decrypted_bytes, content_type='application/octet-stream')
+        response['Content-Disposition'] = f'attachment; filename="{doc.name}"'
+        return response
+

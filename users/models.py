@@ -12,6 +12,7 @@ class User(AbstractUser):
     phone_number = models.CharField(max_length=15, blank=True, null=True)
     department = models.ForeignKey('academics.Department', on_delete=models.SET_NULL, null=True, blank=True)
     year = models.IntegerField(default=1)
+    batch = models.CharField(max_length=15, blank=True, default='')
 
     def __str__(self):
         return f"{self.username} ({self.role})"

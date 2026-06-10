@@ -1,6 +1,6 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import DepartmentViewSet, CourseViewSet, SubjectViewSet, TimetableViewSet, FeeStructureViewSet, StudentPaymentViewSet, AttendanceViewSet
+from .views import DepartmentViewSet, CourseViewSet, SubjectViewSet, TimetableViewSet, FeeStructureViewSet, StudentPaymentViewSet, AttendanceViewSet, DownloadReceiptView, DocumentVaultViewSet
 from .views import FacultySubjectsView, FacultyStudentListView, FacultyStudentStatsView, MarkAttendanceView, UploadMarksView, StudentAttendanceView, StudentResultView, StudentFeeView
 
 router = DefaultRouter()
@@ -11,9 +11,11 @@ router.register(r'timetable', TimetableViewSet)
 router.register(r'fees', FeeStructureViewSet)
 router.register(r'payments', StudentPaymentViewSet)
 router.register(r'attendance', AttendanceViewSet, basename='attendance')
+router.register(r'documents', DocumentVaultViewSet, basename='documents')
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('payments/<int:pk>/receipt/', DownloadReceiptView.as_view(), name='payment-receipt'),
     path('faculty/subjects/', FacultySubjectsView.as_view(), name='faculty-subjects'),
     path('faculty/students/', FacultyStudentListView.as_view(), name='faculty-students'),
     path('faculty/student-stats/', FacultyStudentStatsView.as_view(), name='faculty-student-stats'),
@@ -23,3 +25,4 @@ urlpatterns = [
     path('student/marks/', StudentResultView.as_view(), name='student-marks'),
     path('student/fees/', StudentFeeView.as_view(), name='student-fees'),
 ]
+

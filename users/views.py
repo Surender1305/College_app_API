@@ -83,3 +83,22 @@ class UserViewSet(viewsets.ModelViewSet):
         if role:
             queryset = queryset.filter(role=role.upper())
         return queryset
+
+class VerifyQRView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        username = request.query_params.get('username')
+        if not username:
+            return Response({'error': 'Username is required'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            user = User.objects.get(username=username)
+            data = UserSerializer(user).data
+            data['is_active_student'] = user.is_active
+            if user.department:
+                course = user.department.courses.first()
+                if course:
+                    data['course_name'] = course.name
+            return Response(data, status=status.HTTP_200_OK)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)

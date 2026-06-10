@@ -9,7 +9,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'password', 'role', 'is_hod', 'phone_number', 'department', 'department_name', 'year', 'semester', 'first_name', 'last_name')
+        fields = ('id', 'username', 'email', 'password', 'role', 'is_hod', 'phone_number', 'department', 'department_name', 'year', 'batch', 'semester', 'first_name', 'last_name')
 
     def get_semester(self, obj):
         return 2 * obj.year - 1 # Simple mapping for demo
